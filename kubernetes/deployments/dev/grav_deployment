@@ -1,0 +1,106 @@
+root@pi4cl01:/home/pi_admin/grav# cat deployment.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grav-namespace
+  labels:
+    name: grav-namespace
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: gravpv
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 10Gi
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: gravpvc
+    namespace: grav-namespace
+  hostPath:
+    path: /mnt/nfs/kube01/grav-storage
+    type: DirectoryOrCreate
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gravpvc
+  namespace: grav-namespace
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: ''
+  volumeMode: Filesystem
+  volumeName: gravpv
+status:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grav-svc
+  namespace: grav-namespace
+  labels:
+    app: grav-svc
+    app.kubernetes.io/instance: grav-svc
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+    nodePort: 30080
+  selector:
+    app: grav
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grav
+  namespace: grav-namespace
+  labels:
+    app: grav
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grav
+  template:
+    metadata:
+      namespace: grav-namespace
+      labels:
+        app: grav
+    spec:
+      containers:
+        - image: lscr.io/linuxserver/grav:1.7.49
+          imagePullPolicy: Always
+          name: grav
+          ports:
+          - containerPort: 80
+            name: http
+          env:
+          - name: PUID
+            value: "1001"
+          - name: PGID
+            value: "1001"
+          - name: TZ
+            value: "Europe/Amsterdam"
+          volumeMounts:
+          - mountPath: "/config"
+            name: gravstorage
+      volumes:
+      - name: gravstorage
+        persistentVolumeClaim:
+          claimName: gravpvc
